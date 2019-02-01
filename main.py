@@ -1,9 +1,10 @@
 import json
 import socketserver
 import time
+from collector import Collector
 
 from encryption_commands import decrypt_rsa, decrypt_aes
-from sql_commands import get_key
+from sql_commands import get_key, remove_account, AppearanceCount
 from host import register, login, send_message, request_message
 
 
@@ -21,36 +22,40 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
 		# request is the TCP socket connected to the client
 		main_data = self.request.recv(4096).strip()
 		loaded_json = json.loads(main_data)
-		data = loaded_json['data']
 		try:
-			encrypted_key = loaded_json['key']
-			key = decrypt_rsa(encrypted_key)
+			data = loaded_json['data']
+			try:
+				encrypted_key = loaded_json['key']
+				key = decrypt_rsa(encrypted_key)
+			except KeyError:
+				user = decrypt_rsa(loaded_json['user']).decode('utf-8')
+				key = get_key(user)
+				if key == AppearanceCount.Empty:
+					self.request.sendall(bytes(json.dumps({'status': 403, 'message': 'You are not currently authenticated'}), 'utf-8'))
+					return
+				elif key == AppearanceCount.Multiple:
+					remove_account(user)
+					self.request.sendall(bytes(json.dumps({'status': 423, 'message': 'You are currently signed in twice, we are deleting your account'}), 'utf-8'))
+					return
+		
+			d = decrypt_aes(data, key)
+			decrypted_json = d.decode('utf-8').strip("".join(map(chr, range(1, 33))))
+			json_text = json.loads(decrypted_json)
+			if json_text['message_type'] == 'register':
+				register(self.request, json_text, key)
+			elif json_text['message_type'] == 'login':
+				login(self.request, json_text)
+			elif json_text['message_type'] == 'send_message':
+				send_message(self.request, json_text)
+			elif json_text['message_type'] == 'ping':
+				request_message(self.request, json_text)
 		except KeyError:
-			user = decrypt_rsa(loaded_json['user']).decode('utf-8')
-			key = get_key(user)
-			if not key:
-				print("Key not found4")
-				return False
-			elif key == True:
-				print("Multiple users have been created4")
-				exit(1)
-
-		d = decrypt_aes(data, key)
-		decrypted_json = d.decode('utf-8').strip("".join(map(chr, range(1, 33))))
-		json_text = json.loads(decrypted_json)
-		if json_text['message_type'] == 'register':
-			register(self.request, json_text, key)
-		elif json_text['message_type'] == 'login':
-			login(self.request, json_text)
-		elif json_text['message_type'] == 'send_message':
-			send_message(self.request, json_text)
-		elif json_text['message_type'] == 'ping':
-			request_message(self.request, json_text)
+			self.request.sendall(bytes(json.dumps({'status': 400, 'message': 'Invalid format'}), 'utf-8'))
 
 
 if __name__ == "__main__":
 	HOST, PORT = "172.16.68.71", 4000
-
+	Collector().start()
 	# Create the server, binding to localhost on port 9999
 	while True:
 		try:
