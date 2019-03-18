@@ -1,7 +1,7 @@
 package main
 
 func IsValidKey(message Message) bool {
-	return message.User == "" && message.AESKey != "" && message.MACKey != "" && message.IV != "" && message.Mac != "" && message.Data != ""
+	return message.User != "" && message.AESKey != "" && message.MACKey != "" && message.IV != "" && message.Mac != "" && message.Data != ""
 }
 
 func IsValidUser(message Message) bool {

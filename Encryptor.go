@@ -10,6 +10,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
+	"fmt"
 	"io"
 	"io/ioutil"
 )
@@ -17,64 +18,58 @@ import (
 var MacSize = 64
 var BlockSize = 16
 
+func DecryptMessage(encryptedMessage Message, privateKey *rsa.PrivateKey) Message {
+	var message Message
+	message.User = string(DecryptRSA(encryptedMessage.User, privateKey))
+	message.Mac = string(DecryptRSA(encryptedMessage.Mac, privateKey))
+	message.IV = string(DecryptRSA(encryptedMessage.IV, privateKey))
+	message.AESKey = string(DecryptRSA(encryptedMessage.AESKey, privateKey))
+	message.MACKey = string(DecryptRSA(encryptedMessage.MACKey, privateKey))
+	return message
+}
+
 func GetPrivateKey() *rsa.PrivateKey {
-	privatePEM, err := ioutil.ReadFile("PrivateKey.pem")
-	if err != nil {
-		return nil
-	}
+	privatePEM, _ := ioutil.ReadFile("PrivateKey.pem")
 	block, _ := pem.Decode([]byte(privatePEM))
 	if block == nil {
-		//todo error occurred
 		return nil
 	}
-	privateKey, err := x509.ParsePKCS1PrivateKey(block.Bytes)
-	if err != nil {
-		//todo error occurred
-		return nil
-	}
-
+	privateKey, _ := x509.ParsePKCS1PrivateKey(block.Bytes)
 	return privateKey
 }
 
 func DecryptAESMessage(message Message, aesKey []byte, macKey []byte) []byte {
-	//todo padding oracle
 	ciphertext, err := base64.StdEncoding.DecodeString(message.Data)
 	if err != nil {
-		//todo error occurred
 		return nil
 	}
 	mac, err := base64.StdEncoding.DecodeString(message.Mac)
 	if err != nil {
-		//todo error occurred
 		return nil
 	}
 	iv, err := base64.StdEncoding.DecodeString(message.IV)
 	if err != nil {
-		//todo error occurred
 		return nil
 	}
-	if !validMac(mac, ciphertext, macKey) {
-		//todo invalid mac
+	if !ValidMac(mac, ciphertext, macKey) {
+		fmt.Println(string(mac))
+		fmt.Println(string(ciphertext))
+		fmt.Println(string(macKey))
 		return nil
 	}
 	block, err := aes.NewCipher(aesKey)
 	if err != nil {
-		//todo error occurred
 		return nil
 	}
-
-	if len(ciphertext)%aes.BlockSize != 0 {
-		//todo error occurred
+	if len(ciphertext) % aes.BlockSize != 0 {
 		return nil
 	}
-
 	mode := cipher.NewCBCDecrypter(block, []byte(iv))
 	mode.CryptBlocks(ciphertext, ciphertext)
-	plaintext := TrimPadding(ciphertext)
-	return plaintext
+	return TrimPadding(ciphertext)
 }
 
-func validMac(messageMac []byte, ciphertext []byte, key []byte) bool {
+func ValidMac(messageMac []byte, ciphertext []byte, key []byte) bool {
 	mac := hmac.New(sha512.New, key)
 	mac.Write(ciphertext)
 	expectedMAC := mac.Sum(nil)
@@ -83,20 +78,21 @@ func validMac(messageMac []byte, ciphertext []byte, key []byte) bool {
 
 func TrimPadding(plaintext []byte) []byte {
 	if plaintext == nil || len(plaintext) == 0 || len(plaintext) % aes.BlockSize != 0 {
-		//todo padding error
 		return nil
 	}
 	padding := plaintext[len(plaintext) - 1]
 	if len(plaintext) < int(padding) || padding < 0 || padding > aes.BlockSize{
-		//todo padding error
 		return nil
 	}
 	paddingStart := len(plaintext) - int(padding)
+	validPadding := true
 	for i := paddingStart; i < len(plaintext); i++ {
 		if plaintext[i] != padding {
-			//todo padding error
-			return nil
+			validPadding = false
 		}
+	}
+	if !validPadding {
+		return nil
 	}
 	return plaintext[:paddingStart]
 }
@@ -104,12 +100,10 @@ func TrimPadding(plaintext []byte) []byte {
 func DecryptRSA(message string, privateKey *rsa.PrivateKey) []byte {
 	decodedMessage, err := base64.StdEncoding.DecodeString(message)
 	if err != nil {
-		//todo error occurred
 		return nil
 	}
 	plaintext, err := rsa.DecryptPKCS1v15(rand.Reader, privateKey, decodedMessage)
 	if err != nil {
-		//todo error occurred
 		return nil
 	}
 	return plaintext
@@ -118,7 +112,6 @@ func DecryptRSA(message string, privateKey *rsa.PrivateKey) []byte {
 func EncryptAES(plaintext []byte, aesKey []byte, macKey []byte) []byte {
 	block, err := aes.NewCipher(aesKey)
 	if err != nil {
-		//todo error occurred
 		return nil
 	}
 	paddedPlaintext := PadPlaintext(plaintext)
@@ -131,14 +124,14 @@ func EncryptAES(plaintext []byte, aesKey []byte, macKey []byte) []byte {
 	}
 	mode := cipher.NewCBCEncrypter(block, iv)
 	mode.CryptBlocks(ciphertext, paddedPlaintext)
-	mac := getMac(ciphertext, macKey)
-	_ = copy(ciphertextTotal[0:MacSize], mac);
+	mac := GetMac(ciphertext, macKey)
+	_ = copy(ciphertextTotal[0:MacSize], mac)
 	_ = copy(ciphertextTotal[MacSize: MacSize + BlockSize], iv)
 	_ = copy(ciphertextTotal[MacSize + BlockSize:], ciphertext)
 	return ciphertextTotal
 }
 
-func getMac(ciphertext, key []byte) []byte {
+func GetMac(ciphertext, key []byte) []byte {
 	mac := hmac.New(sha512.New, key)
 	mac.Write(ciphertext)
 	return mac.Sum(nil)

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"net"
+	"os"
 	"sync"
 )
 
@@ -17,6 +18,9 @@ func NewExecutor(MaxThreads int) Executor {
 	var workers = NewWorkerQueue()
 	var worker *Worker
 	var key = GetPrivateKey()
+	if key == nil {
+		os.Exit(0)
+	}
 	for i := 0; i < MaxThreads; i++ {
 		worker = NewWorker(key)
 		workers.Push(worker)
