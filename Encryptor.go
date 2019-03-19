@@ -10,7 +10,6 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
-	"fmt"
 	"io"
 	"io/ioutil"
 )
@@ -25,6 +24,8 @@ func DecryptMessage(encryptedMessage Message, privateKey *rsa.PrivateKey) Messag
 	message.IV = string(DecryptRSA(encryptedMessage.IV, privateKey))
 	message.AESKey = string(DecryptRSA(encryptedMessage.AESKey, privateKey))
 	message.MACKey = string(DecryptRSA(encryptedMessage.MACKey, privateKey))
+	data, _ := base64.StdEncoding.DecodeString(encryptedMessage.Data)
+	message.Data = string(data)
 	return message
 }
 
@@ -39,22 +40,8 @@ func GetPrivateKey() *rsa.PrivateKey {
 }
 
 func DecryptAESMessage(message Message, aesKey []byte, macKey []byte) []byte {
-	ciphertext, err := base64.StdEncoding.DecodeString(message.Data)
-	if err != nil {
-		return nil
-	}
-	mac, err := base64.StdEncoding.DecodeString(message.Mac)
-	if err != nil {
-		return nil
-	}
-	iv, err := base64.StdEncoding.DecodeString(message.IV)
-	if err != nil {
-		return nil
-	}
-	if !ValidMac(mac, ciphertext, macKey) {
-		fmt.Println(string(mac))
-		fmt.Println(string(ciphertext))
-		fmt.Println(string(macKey))
+	ciphertext := []byte(message.Data)
+	if !ValidMac([]byte(message.Mac), ciphertext, macKey) {
 		return nil
 	}
 	block, err := aes.NewCipher(aesKey)
@@ -64,7 +51,7 @@ func DecryptAESMessage(message Message, aesKey []byte, macKey []byte) []byte {
 	if len(ciphertext) % aes.BlockSize != 0 {
 		return nil
 	}
-	mode := cipher.NewCBCDecrypter(block, []byte(iv))
+	mode := cipher.NewCBCDecrypter(block, []byte(message.IV))
 	mode.CryptBlocks(ciphertext, ciphertext)
 	return TrimPadding(ciphertext)
 }

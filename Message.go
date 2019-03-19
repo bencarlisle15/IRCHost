@@ -13,9 +13,9 @@ type InnerMessage struct {
 	MessageType string `json:"messageType"`
 	User string `json:"user"`
 	Password string `json:"password"`
-	From string `json:"from"`
 	To string `json:"to"`
 	Message string `json:"message"`
+	IsFile bool `json:"isFile"`
 	SessionId string `json:"sessionId"`
 }
 
@@ -28,4 +28,12 @@ type LoginResponse struct {
 	Status int `json:"status"`
 	Message string `json:"message"`
 	SessionId string `json:"sessionId"`
+}
+
+type Sendable struct {
+	Status int `json:"status"`
+	Receiver string `json:"receiver"`
+	Sender string `json:"sender"`
+	Message string `json:"message"`
+	IsFile bool `json:"isFile"`
 }

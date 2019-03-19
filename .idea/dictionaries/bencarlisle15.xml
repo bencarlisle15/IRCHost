@@ -3,6 +3,7 @@
     <words>
       <w>ciphertext</w>
       <w>encryptor</w>
+      <w>sendable</w>
     </words>
   </dictionary>
 </component>

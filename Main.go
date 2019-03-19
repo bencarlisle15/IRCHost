@@ -15,6 +15,7 @@ func main() {
 		return
 	}
 	defer l.Close()
+	go Sweep()
 	var executor = NewExecutor(8)
 	go executor.Start()
 	fmt.Println("Started Server")

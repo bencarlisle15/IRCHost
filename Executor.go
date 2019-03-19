@@ -34,13 +34,12 @@ func NewExecutor(MaxThreads int) Executor {
 func (executor *Executor) Start() {
 	for {
 		executor.Lock.Lock()
-		fmt.Println("Waiting")
 		for executor.Connections.Len() == 0 {
 			executor.Condition.Wait()
 		}
 		var conn = executor.Connections.Pop()
 		executor.Lock.Unlock()
-		fmt.Println("Adding to worker queue")
+		fmt.Println("Incoming Connection")
 		var smallestWorker = SmallestWorker(executor.Workers)
 		go smallestWorker.AddConnection(conn)
 	}

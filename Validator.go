@@ -9,10 +9,14 @@ func IsValidUser(message Message) bool {
 }
 
 func IsValidSignIn(message InnerMessage) bool {
-	return (message.MessageType == "register" || message.MessageType == "login") && message.User != "" && message.Password != "" && message.From == "" && message.To == "" && message.Message == "" && message.SessionId == ""
+	return (message.MessageType == "register" || message.MessageType == "login") && message.User != "" && message.Password != "" && message.To == "" && message.Message == "" && message.SessionId == ""
 }
 
 func IsValidRequest(message InnerMessage) bool {
-	return message.MessageType == "sendMessage" && message.User == "" && message.Password == "" && message.From != "" && message.To != "" && message.Message != "" && message.SessionId != ""
+	return message.MessageType == "sendMessage" && message.User == "" && message.Password == "" && message.To != "" && message.Message != "" && message.SessionId != ""
 
+}
+
+func IsValidPing(message InnerMessage) bool {
+	return message.MessageType == "ping" && message.User == "" && message.Password == "" && message.To == "" && message.Message == "" && message.SessionId != ""
 }
