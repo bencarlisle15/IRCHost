@@ -2,7 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/IRCGoHost.iml" filepath="$PROJECT_DIR$/.idea/IRCGoHost.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../SCAHost/.idea/SCAHost.iml" filepath="$PROJECT_DIR$/../SCAHost/.idea/SCAHost.iml" />
     </modules>
   </component>
 </project>

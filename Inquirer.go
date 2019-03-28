@@ -60,6 +60,10 @@ func SweepSessions() {
 	database, _ := sql.Open("sqlite3", "database.db")
 	defer database.Close()
 	rows,err := database.Exec("DELETE FROM Sessions WHERE timestamp <= ?", GetEpoch()-10)
+	if err != nil {
+		fmt.Print("ERR ")
+		fmt.Println(err)
+	}
 	affected, _ := rows.RowsAffected()
 	if affected > 0 {
 		fmt.Println("Swept " + strconv.Itoa(int(affected)) + " sessions")
@@ -98,13 +102,20 @@ func GetNextMessage(user string) Sendable {
 	database, _ := sql.Open("sqlite3", "database.db")
 	defer database.Close()
 	rows,_ := database.Query("SELECT * FROM Messages WHERE receiver=?", user)
+	defer rows.Close()
 	var sendable Sendable
 	if !rows.Next() {
 		return sendable
 	}
-	_ = rows.Scan(&sendable.Receiver, &sendable.Sender, &sendable.Message, &sendable.IsFile)
-	rows, err := database.Query("DELETE FROM Messages WHERE receiver=? AND sender=? AND message=? && isFile=? LIMIT 1", sendable.Receiver, sendable.Sender, sendable.Message, sendable.IsFile)
-	fmt.Println(rows)
+	var timestamp string
+	err := rows.Scan(&sendable.Receiver, &sendable.Sender, &sendable.Message, &sendable.IsFile, &timestamp)
+	fmt.Print("ERR1 ")
+	fmt.Println(err)
+	deletedRows, err := database.Query("DELETE FROM Messages WHERE receiver=? AND sender=? AND message=? && isFile=? LIMIT 1", sendable.Receiver, sendable.Sender, sendable.Message, sendable.IsFile)
+	defer deletedRows.Close()
+	fmt.Print("Rows ")
+	fmt.Println(deletedRows)
+	fmt.Print("Err ")
 	fmt.Println(err)
 	return sendable
 }
