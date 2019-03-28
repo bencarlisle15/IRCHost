@@ -64,7 +64,7 @@ def send_message(request, data):
 		user = get_user(session_id)
 		if user == AppearanceCount.Multiple:
 			remove_session(session_id)
-			response = bytes(json.dumps({'status': 500, 'message': 'An internal service error has occurred'}), 'utf-8')
+			response = bytes(json.dumps({'status': 502, 'message': 'An internal service error has occurred'}), 'utf-8')
 		elif user == AppearanceCount.Empty:
 			response = bytes(json.dumps({'status': 403, 'message': 'You are not currently authenticated'}), 'utf-8')
 		else:
@@ -84,7 +84,7 @@ def send_message(request, data):
 					remove_account(recipient)
 					response = encrypt_aes(json.dumps({'status': 410, 'message': 'Other user not signed in'}), key)
 				else:
-					to_send = encrypt_aes(json.dumps({'status': 200, 'from': user, 'to': data['to'], 'message': data['message']}), recipient_key)
+					to_send = encrypt_aes(json.dumps({'status': 200, 'from': user, 'to': data['to'], 'is_file': data['is_file'], 'message': data['message']}), recipient_key)
 					add_message(recipient_session_id, to_send)
 					response = encrypt_aes(json.dumps({'status': 200, 'message': 'Message successfully sent'}), key)
 	except KeyError:
@@ -94,11 +94,11 @@ def send_message(request, data):
 
 def request_message(request, data):
 	try:
-		session_id = data['data']
+		session_id = data['session_id']
 		user = get_user(session_id)
 		if user == AppearanceCount.Multiple:
 			remove_session(session_id)
-			response = bytes(json.dumps({'status': 500, 'message': 'An internal service error has occurred'}), 'utf-8')
+			response = bytes(json.dumps({'status': 502, 'message': 'An internal service error has occurred'}), 'utf-8')
 		elif user == AppearanceCount.Empty:
 			response = bytes(json.dumps({'status': 403, 'message': 'You are not currently authenticated'}), 'utf-8')
 		else:

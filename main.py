@@ -8,6 +8,17 @@ from sql_commands import get_key, remove_account, AppearanceCount
 from host import register, login, send_message, request_message
 
 
+def receive_all_input(socket):
+	buffer_size = 4096  # 4 KiB
+	data = b''
+	while True:
+		part = socket.recv(buffer_size)
+		data += part
+		if len(part) < buffer_size:
+			# either 0 or end of data
+			break
+	return data
+
 class MyTCPHandler(socketserver.BaseRequestHandler):
 	"""
 	The request handler class for our server.
@@ -16,45 +27,48 @@ class MyTCPHandler(socketserver.BaseRequestHandler):
 	override the handle() method to implement communication to the
 	client.
 	"""
-
+	
 	def handle(self):
-		print(self.request)
-		# request is the TCP socket connected to the client
-		main_data = self.request.recv(4096).strip()
-		loaded_json = json.loads(main_data)
 		try:
-			data = loaded_json['data']
+			print(self.request)
+			# request is the TCP socket connected to the client
+			main_data = receive_all_input(self.request).strip()
+			loaded_json = json.loads(main_data)
 			try:
-				encrypted_key = loaded_json['key']
-				key = decrypt_rsa(encrypted_key)
+				data = loaded_json['data']
+				try:
+					encrypted_key = loaded_json['key']
+					key = decrypt_rsa(encrypted_key)
+				except KeyError:
+					user = decrypt_rsa(loaded_json['user']).decode('utf-8')
+					key = get_key(user)
+					if key == AppearanceCount.Empty:
+						self.request.sendall(bytes(json.dumps({'status': 403, 'message': 'You are not currently authenticated'}), 'utf-8'))
+						return
+					elif key == AppearanceCount.Multiple:
+						remove_account(user)
+						self.request.sendall(bytes(json.dumps({'status': 423, 'message': 'You are currently signed in twice, we are deleting your account'}), 'utf-8'))
+						return
+				
+				d = decrypt_aes(data, key)
+				decrypted_json = d.decode('utf-8').strip("".join(map(chr, range(1, 33))))
+				json_text = json.loads(decrypted_json)
+				if json_text['message_type'] == 'register':
+					register(self.request, json_text, key)
+				elif json_text['message_type'] == 'login':
+					login(self.request, json_text)
+				elif json_text['message_type'] == 'send_message':
+					send_message(self.request, json_text)
+				elif json_text['message_type'] == 'ping':
+					request_message(self.request, json_text)
 			except KeyError:
-				user = decrypt_rsa(loaded_json['user']).decode('utf-8')
-				key = get_key(user)
-				if key == AppearanceCount.Empty:
-					self.request.sendall(bytes(json.dumps({'status': 403, 'message': 'You are not currently authenticated'}), 'utf-8'))
-					return
-				elif key == AppearanceCount.Multiple:
-					remove_account(user)
-					self.request.sendall(bytes(json.dumps({'status': 423, 'message': 'You are currently signed in twice, we are deleting your account'}), 'utf-8'))
-					return
-		
-			d = decrypt_aes(data, key)
-			decrypted_json = d.decode('utf-8').strip("".join(map(chr, range(1, 33))))
-			json_text = json.loads(decrypted_json)
-			if json_text['message_type'] == 'register':
-				register(self.request, json_text, key)
-			elif json_text['message_type'] == 'login':
-				login(self.request, json_text)
-			elif json_text['message_type'] == 'send_message':
-				send_message(self.request, json_text)
-			elif json_text['message_type'] == 'ping':
-				request_message(self.request, json_text)
-		except KeyError:
-			self.request.sendall(bytes(json.dumps({'status': 400, 'message': 'Invalid format'}), 'utf-8'))
+				self.request.sendall(bytes(json.dumps({'status': 400, 'message': 'Invalid format'}), 'utf-8'))
+		except:
+			self.request.sendall(bytes(json.dumps({'status': 500, 'message': 'An error occurred'}), 'utf-8'))
 
 
 if __name__ == "__main__":
-	HOST, PORT = "172.16.68.71", 4000
+	HOST, PORT = "127.0.0.1", 5000
 	Collector().start()
 	# Create the server, binding to localhost on port 9999
 	while True:
