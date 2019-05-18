@@ -6,32 +6,38 @@ type Message struct {
 	MACKey string `json:"macKey"`
 	IV string `json:"iv"`
 	Mac string `json:"mac"`
+	Signature string `json:"signature"`
 	Data string `json:"data"`
 }
 
 type InnerMessage struct {
 	MessageType string `json:"messageType"`
-	User string `json:"user"`
-	Password string `json:"password"`
+	Nonce string `json:"nonce"`
 	To string `json:"to"`
+	Password string `json:"password"`
 	Message string `json:"message"`
 	IsFile bool `json:"isFile"`
 	SessionId string `json:"sessionId"`
+	PublicKey string `json:"publicKey"`
 }
 
 type Response struct {
-	Status int `json:"status"`
-	Message string `json:"message"`
+	IV string `json:"iv"`
+	Signature string `json:"signature"`
+	Data string `json:"data"`
 }
 
-type LoginResponse struct {
+type InnerResponse struct {
 	Status int `json:"status"`
+	Nonce string `json:"nonce"`
 	Message string `json:"message"`
 	SessionId string `json:"sessionId"`
+	PublicKey string `json:"publicKey"`
 }
 
 type Sendable struct {
 	Status int `json:"status"`
+	Nonce string `json:"nonce"`
 	Receiver string `json:"receiver"`
 	Sender string `json:"sender"`
 	Message string `json:"message"`

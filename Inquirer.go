@@ -14,6 +14,7 @@ type UserData struct {
 	Salt string `json:"salt"`
 	AESKey string `json:"aeskey"`
 	MACKey string `json:"mackey"`
+	PublicKey string `json:"publickey"`
 }
 
 func CreateResults(rows *sql.Rows) []UserData {
@@ -26,7 +27,7 @@ func CreateResults(rows *sql.Rows) []UserData {
 	return results
 }
 
-func AddUser(user string, password, salt, aesKey, macKey []byte) bool {
+func AddUser(user string, password, salt, publicKey []byte) bool {
 	database, _ := sql.Open("sqlite3", "database.db")
 	defer database.Close()
 	rows, _ := database.Query("SELECT * FROM Users WHERE user=?", user)
@@ -34,9 +35,9 @@ func AddUser(user string, password, salt, aesKey, macKey []byte) bool {
 	if rows.Next() {
 		return false
 	}
-	statement, _ := database.Prepare("INSERT INTO Users VALUES (?, ?, ?, ?, ?)")
+	statement, _ := database.Prepare("INSERT INTO Users VALUES (?, ?, ?, ?)")
 	defer statement.Close()
-	_, err := statement.Exec(user, password, salt, aesKey, macKey)
+	_, err := statement.Exec(user, password, salt, publicKey)
 	return err == nil
 }
 
@@ -130,4 +131,12 @@ func AddMessage(to string, from string, message string, isFile bool) {
 
 func GetEpoch() int64 {
 	return time.Now().Unix()
+}
+
+func GetPublicKey(user string) string {
+	userData := GetUserData(user)
+	if len(userData) != 1 {
+		return ""
+	}
+	return userData[0].PublicKey
 }

@@ -1,0 +1,41 @@
+register
+[user] [aesKey] [macKey] [iv] [mac] (messageType, nonce, password, publicKey)
+
+<- [iv] <H(m)> (status, nonce, message)
+
+login
+[user] [aesKey] [iv] <H(m)> (messageType, nonce, password)
+
+<- [iv] <H(m)> (status, nonce, message, sessionId)
+
+sendMessage
+[user] [aesKey] [iv] <H(m)> (messageType, nonce, to, |message|, sessionId, isFile)
+
+<- [iv] <H(m)> (status, nonce, message)
+
+userQuery
+[user] [aesKey] [iv] <(m)> (messageType, nonce, to, sessionId)
+
+<- [iv] <H(m)> (status, nonce, message, publicKey)
+
+ping
+[user] [aesKey] [iv] <H(m)> (messageType, nonce, sessionId)
+
+<- [iv] <H(m)> (status, nonce, message)
+
+<- [iv] <H(m)> (status, nonce, receiver, sender, message, isFile)
+
+
+Message Contains
+[user] [aesKey] [macKey] [iv] [mac] (data)
+
+	Register -> [user] [aesKey] [macKey] [iv] [mac]
+	Non-register -> [user] [aesKey] [iv] <Signature>
+
+InnerMessage Contains
+(messageType, nonce, to, password, sessionId, message, isFile, publicKey)
+
+Response Contains
+[iv] <Signature> (data)
+	Sendable -> (status, nonce, receiver, sender, message, isFile)
+	Non-sendable -> (status, nonce, message, sessionId, publicKey

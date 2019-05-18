@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/hmac"
@@ -14,7 +15,6 @@ import (
 	"io/ioutil"
 )
 
-var MacSize = 64
 var BlockSize = 16
 
 func DecryptMessage(encryptedMessage Message, privateKey *rsa.PrivateKey) Message {
@@ -39,11 +39,14 @@ func GetPrivateKey() *rsa.PrivateKey {
 	return privateKey
 }
 
-func DecryptAESMessage(message Message, aesKey []byte, macKey []byte) []byte {
-	ciphertext := []byte(message.Data)
-	if !ValidMac([]byte(message.Mac), ciphertext, macKey) {
+func DecryptAESMACMessage(ciphertext []byte, aesKey []byte, macKey []byte, iv []byte, mac []byte) []byte {
+	if !ValidMac(mac, ciphertext, macKey) {
 		return nil
 	}
+	return DecryptAESMessage(ciphertext, aesKey, iv)
+}
+
+func DecryptAESMessage(ciphertext []byte, aesKey []byte, iv []byte) []byte {
 	block, err := aes.NewCipher(aesKey)
 	if err != nil {
 		return nil
@@ -51,7 +54,7 @@ func DecryptAESMessage(message Message, aesKey []byte, macKey []byte) []byte {
 	if len(ciphertext) % aes.BlockSize != 0 {
 		return nil
 	}
-	mode := cipher.NewCBCDecrypter(block, []byte(message.IV))
+	mode := cipher.NewCBCDecrypter(block, []byte(iv))
 	mode.CryptBlocks(ciphertext, ciphertext)
 	return TrimPadding(ciphertext)
 }
@@ -96,32 +99,48 @@ func DecryptRSA(message string, privateKey *rsa.PrivateKey) []byte {
 	return plaintext
 }
 
-func EncryptAES(plaintext []byte, aesKey []byte, macKey []byte) []byte {
-	block, err := aes.NewCipher(aesKey)
+func GetIV() []byte {
+	iv := make([]byte, BlockSize)
+	_, err := io.ReadFull(rand.Reader, iv)
 	if err != nil {
 		return nil
 	}
-	paddedPlaintext := PadPlaintext(plaintext)
-	ciphertextTotal := make([]byte, MacSize + BlockSize + len(paddedPlaintext))
-	ciphertext := make([]byte, len(paddedPlaintext))
-	iv := make([]byte, BlockSize)
-	_, err = io.ReadFull(rand.Reader, iv)
+	return iv
+}
+
+func Sign(privateKey *rsa.PrivateKey, message []byte) []byte {
+	hashed := GetHash(message)
+	signature, err := rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA512, hashed[:])
 	if err != nil {
+		return signature
+	} else {
 		return nil
+	}
+}
+
+func VerifySignature(publicKeyBytes []byte, signature []byte, message []byte) bool {
+	publicKey, err := x509.ParsePKCS1PublicKey(publicKeyBytes)
+	if err == nil {
+		return false
+	}
+	hashed := GetHash(message)
+	return rsa.VerifyPKCS1v15(publicKey, crypto.SHA512, hashed[:], signature) != nil
+}
+
+func EncryptAES(plaintext []byte, aesKey []byte) ([]byte, []byte) {
+	block, err := aes.NewCipher(aesKey)
+	if err != nil {
+		return nil, nil
+	}
+	paddedPlaintext := PadPlaintext(plaintext)
+	ciphertext := make([]byte, len(paddedPlaintext))
+	iv := GetIV()
+	if iv == nil {
+		return nil, nil
 	}
 	mode := cipher.NewCBCEncrypter(block, iv)
 	mode.CryptBlocks(ciphertext, paddedPlaintext)
-	mac := GetMac(ciphertext, macKey)
-	_ = copy(ciphertextTotal[0:MacSize], mac)
-	_ = copy(ciphertextTotal[MacSize: MacSize + BlockSize], iv)
-	_ = copy(ciphertextTotal[MacSize + BlockSize:], ciphertext)
-	return ciphertextTotal
-}
-
-func GetMac(ciphertext, key []byte) []byte {
-	mac := hmac.New(sha512.New, key)
-	mac.Write(ciphertext)
-	return mac.Sum(nil)
+	return ciphertext, iv
 }
 
 func PadPlaintext(plaintext []byte) []byte {
@@ -133,5 +152,30 @@ func PadPlaintext(plaintext []byte) []byte {
 		plaintext = append(plaintext, byte(paddingNeeded))
 	}
 	return plaintext
+}
 
+func HashPassword(password string, salt []byte) []byte {
+	salted := []byte(password)
+	for i := 0; i < len(salt); i++ {
+		salted = append(salted, salt[i])
+	}
+	return GetHash(salted)
+}
+
+func EqualBytes(byte1, byte2 []byte) bool {
+	if len(byte1) != len(byte2) {
+		return false
+	}
+	for i := 0; i < len(byte1); i++ {
+		if byte1[i] != byte2[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func GetHash(toHash []byte) []byte {
+	hash := sha512.New()
+	hash.Write(toHash)
+	return hash.Sum(nil)
 }

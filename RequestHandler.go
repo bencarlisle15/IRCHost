@@ -3,7 +3,6 @@ package main
 import (
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/sha512"
 	"encoding/base64"
 	"encoding/json"
 	"io"
@@ -16,121 +15,141 @@ func RequestHandler(response []byte, privateKey *rsa.PrivateKey) []byte {
 	if err != nil {
 		//todo error occurred
 	}
-	if IsValidKey(message) {
-		toWrite = MessageHandler(message, privateKey, true)
-	} else if IsValidUser(message) {
-		toWrite = MessageHandler(message, privateKey, false)
+	if IsValidRegisterMessage(message) {
+		toWrite = RegisterMessageHandler(message, privateKey)
+	} else if IsValidLoggedMessage(message) {
+		toWrite = LoggedMessageHandler(message, privateKey)
 	} else {
 		//todo error occurred
 	}
 	return toWrite
 }
 
-func MessageHandler(encryptedMessage Message, privateKey *rsa.PrivateKey, isKey bool) []byte {
+func RegisterMessageHandler(encryptedMessage Message, privateKey *rsa.PrivateKey) []byte {
 	message := DecryptMessage(encryptedMessage, privateKey)
-	userDataResults := GetUserData(message.User)
-	var userData UserData
-	var aesKey, macKey []byte
-	if !isKey && len(userDataResults) == 0 {
-		var response Response
-		response.Status = 403
-		response.Message = "User does not exist"
-		return responseToString(response)
-	} else if len(userDataResults) > 1 {
-		var response Response
-		response.Status = 423
-		response.Message = "Account deleted as for security protocol"
-		return responseToString(response)
-	} else if isKey {
-		aesKey = []byte(message.AESKey)
-		macKey = []byte(message.MACKey)
-	} else {
-		userData = userDataResults[0]
-		aesKey = []byte(userData.AESKey)
-		macKey = []byte(userData.MACKey)
-	}
-	var data = DecryptAESMessage(message, aesKey, macKey)
+	aesKey := []byte(message.AESKey)
+	macKey := []byte(message.MACKey)
+	iv := []byte(message.IV)
+	mac := []byte(message.Mac)
+	data := DecryptAESMACMessage([]byte(message.Data), aesKey, macKey, iv, mac)
 	var innerMessage InnerMessage
 	var err = json.Unmarshal(data, &innerMessage)
 	var toWrite []byte
-	if err == nil && IsValidSignIn(innerMessage) {
-		if innerMessage.MessageType == "register" {
-			toWrite = RegisterUser(innerMessage, aesKey, macKey)
-		} else if innerMessage.MessageType == "login" {
-			toWrite = LoginUser(innerMessage, userData)
-		}
-	} else if err == nil && IsValidRequest(innerMessage) {
-		toWrite = SendRequest(innerMessage, userData)
-	} else if err == nil && IsValidPing(innerMessage) {
-		toWrite = Ping(innerMessage, userData)
+	if err == nil && IsValidRegister(innerMessage) {
+		toWrite = RegisterUser(innerMessage, message.User)
 	} else {
-		var response Response
-		response.Status = 415
-		response.Message = "Incorrectly labeled"
-		toWrite = responseToString(response)
+		var innerResponse InnerResponse
+		innerResponse.Status = 415
+		innerResponse.Message = "Incorrectly labeled"
+		toWrite = InnerResponseToString(innerResponse)
 	}
-	ciphertext := EncryptAES(toWrite, aesKey, macKey)
+	ciphertext, responseIV := EncryptAES(toWrite, aesKey)
 	if ciphertext == nil {
-		return toWrite
+		//todo
+		return nil
 	}
 	encodedCiphertext := make([]byte, base64.StdEncoding.EncodedLen(len(ciphertext)))
 	base64.StdEncoding.Encode(encodedCiphertext, []byte(ciphertext))
-	return encodedCiphertext
-}
-
-func PrintMessage(message Message) string {
-	return "User: " + message.User + "\nIV: " + message.IV + "\nMAC: " + message.Mac + "\nAESKey: " + message.AESKey + "\nMACKey: " + message.MACKey + "\nData: " + message.Data
-}
-
-func RegisterUser(message InnerMessage, aesKey []byte, macKey []byte) []byte {
+	signature := Sign(privateKey, encodedCiphertext)
+	//todo check
 	var response Response
+	response.IV = string(responseIV)
+	response.Signature = string(signature)
+	response.Data = string(encodedCiphertext)
+	return ResponseToString(response)
+}
+
+func LoggedMessageHandler(encryptedMessage Message, privateKey *rsa.PrivateKey) []byte {
+	message := DecryptMessage(encryptedMessage, privateKey)
+	userDataResults := GetUserData(message.User)
+	var userData UserData
+	var publicKey []byte
+	if len(userDataResults) == 0 {
+		var innerResponse InnerResponse
+		innerResponse.Status = 403
+		innerResponse.Message = "User does not exist"
+		return InnerResponseToString(innerResponse)
+	} else if len(userDataResults) > 1 {
+		var innerResponse InnerResponse
+		innerResponse.Status = 423
+		innerResponse.Message = "Account deleted as for security protocol"
+		return InnerResponseToString(innerResponse)
+	} else {
+		userData = userDataResults[0]
+		publicKey = []byte(userData.PublicKey)
+	}
+	if !VerifySignature(publicKey, []byte(message.Signature), []byte(message.Data)) {
+		//todo invalid signature
+		return nil
+	}
+	aesKey := []byte(message.AESKey)
+	iv := []byte(message.IV)
+	var data = DecryptAESMessage([]byte(message.Data), aesKey, iv)
+	var innerMessage InnerMessage
+	var err = json.Unmarshal(data, &innerMessage)
+	var toWrite []byte
+	if err == nil && IsValidLogIn(innerMessage) {
+		toWrite = LoginUser(innerMessage, userData)
+	} else if err == nil && IsValidRequest(innerMessage) {
+		toWrite = SendRequest(innerMessage, userData)
+	} else if err == nil && isValidUserQuery(innerMessage) {
+		toWrite = SendUserQuery(innerMessage, userData)
+	} else if err == nil && IsValidPing(innerMessage) {
+		toWrite = Ping(innerMessage, userData)
+	} else {
+		var innerResponse InnerResponse
+		innerResponse.Status = 415
+		innerResponse.Message = "Incorrectly labeled"
+		toWrite = InnerResponseToString(innerResponse)
+	}
+	ciphertext, responseIV := EncryptAES(toWrite, aesKey)
+	if ciphertext == nil {
+		//todo
+		return nil
+	}
+	encodedCiphertext := make([]byte, base64.StdEncoding.EncodedLen(len(ciphertext)))
+	base64.StdEncoding.Encode(encodedCiphertext, []byte(ciphertext))
+	signature := Sign(privateKey, encodedCiphertext)
+	//todo check
+	var response Response
+	response.IV = string(responseIV)
+	response.Signature = string(signature)
+	response.Data = string(encodedCiphertext)
+	return ResponseToString(response)
+}
+
+//func PrintMessage(message Message) string {
+//	return "User: " + message.User + "\nIV: " + message.IV + "\nMAC: " + message.Mac + "\nAESKey: " + message.AESKey + "\nMACKey: " + message.MACKey + "\nData: " + message.Data
+//}
+
+func RegisterUser(message InnerMessage, user string) []byte {
+	//todo check nonce
+	var innerResponse InnerResponse
 	salt := make([]byte, 64)
 	_, err := io.ReadFull(rand.Reader, salt)
 	if err != nil {
 		//todo error occurred
 		return []byte("An error occurred")
 	}
-	hashedPassword := hashPassword(message.Password, salt)
-	if AddUser(message.User, hashedPassword, salt, aesKey, macKey) {
-		response.Status = 201
-		response.Message = "You are now registered"
+	hashedPassword := HashPassword(message.Password, salt)
+	if AddUser(user, hashedPassword, salt, []byte(message.PublicKey)) {
+		innerResponse.Status = 201
+		innerResponse.Message = "You are now registered"
 	} else {
-		response.Status = 409
-		response.Message = "That username already exists, try another"
+		innerResponse.Status = 409
+		innerResponse.Message = "That username already exists, try another"
 	}
-	return responseToString(response)
+	return InnerResponseToString(innerResponse)
 }
-
-func hashPassword(password string, salt []byte) []byte {
-	salted := []byte(password)
-	for i := 0; i < len(salt); i++ {
-		salted = append(salted, salt[i])
-	}
-	hash := sha512.New()
-	hash.Write(salted)
-	return hash.Sum(nil)
-}
-
-func equalBytes(byte1, byte2 []byte) bool {
-	if len(byte1) != len(byte2) {
-		return false
-	}
-	for i := 0; i < len(byte1); i++ {
-		if byte1[i] != byte2[i] {
-			return false
-		}
-	}
-	return true
-}
-
 
 func LoginUser(message InnerMessage, userData UserData) []byte {
-	hashed := hashPassword(message.Password, []byte(userData.Salt))
-	if !equalBytes(hashed, []byte(userData.Hash)) {
-		var response Response
-		response.Status = 401
-		response.Message = "Incorrect username or password"
-		return responseToString(response)
+	//todo check nonce
+	hashed := HashPassword(message.Password, []byte(userData.Salt))
+	if !EqualBytes(hashed, []byte(userData.Hash)) {
+		var innerResponse InnerResponse
+		innerResponse.Status = 401
+		innerResponse.Message = "Incorrect username or password"
+		return InnerResponseToString(innerResponse)
 	}
 	sessionIDBytes := make([]byte, 64)
 	_, err := io.ReadFull(rand.Reader, sessionIDBytes)
@@ -139,9 +158,9 @@ func LoginUser(message InnerMessage, userData UserData) []byte {
 		//todo error occurred
 		return nil
 	}
-	var loginResponse LoginResponse
+	var loginResponse InnerResponse
 	loginResponse.SessionId = string(sessionID)
-	if !AddSessionID(message.User, sessionID) {
+	if !AddSessionID(userData.User, sessionID) {
 		loginResponse.Status = 423
 		loginResponse.Message = "Account deleted as for security protocol"
 	} else {
@@ -156,7 +175,16 @@ func LoginUser(message InnerMessage, userData UserData) []byte {
 	return toWrite
 }
 
-func responseToString(response Response) []byte {
+func InnerResponseToString(innerResponse InnerResponse) []byte {
+	toWrite, err := json.Marshal(innerResponse)
+	if err != nil {
+		//todo error occurred
+		return nil
+	}
+	return toWrite
+}
+
+func ResponseToString(response Response) []byte {
 	toWrite, err := json.Marshal(response)
 	if err != nil {
 		//todo error occurred
@@ -166,51 +194,86 @@ func responseToString(response Response) []byte {
 }
 
 func SendRequest(message InnerMessage, userData UserData) []byte {
+	//todo check and send nonce
 	sessions := GetSessions(userData.User)
 	switch len(sessions) {
 	case 0:
-		var response Response
-		response.Status = 403
-		response.Message = "You are not currently authenticated"
-		return responseToString(response)
+		var innerResponse InnerResponse
+		innerResponse.Status = 403
+		innerResponse.Message = "You are not currently authenticated"
+		return InnerResponseToString(innerResponse)
 	case 1:
 		if sessions[0] == message.SessionId {
 			break
 		}
 		//intentionally goes to default
 	default:
-		var response Response
-		response.Status = 423
-		response.Message = "Account deleted as for security protocol"
+		var innerResponse InnerResponse
+		innerResponse.Status = 423
+		innerResponse.Message = "Account deleted as for security protocol"
 		//todo delete account
-		return responseToString(response)
+		return InnerResponseToString(innerResponse)
 	}
 	AddMessage(message.To, userData.User, message.Message, message.IsFile)
-	var response Response
-	response.Status = 200
-	response.Message = "Message successfully sent"
-	return responseToString(response)
+	var innerResponse InnerResponse
+	innerResponse.Status = 200
+	innerResponse.Message = "Message successfully sent"
+	return InnerResponseToString(innerResponse)
+}
+
+func SendUserQuery(message InnerMessage, userData UserData) []byte {
+	//todo check and send nonce
+	sessions := GetSessions(userData.User)
+	switch len(sessions) {
+	case 0:
+		var innerResponse InnerResponse
+		innerResponse.Status = 403
+		innerResponse.Message = "You are not currently authenticated"
+		return InnerResponseToString(innerResponse)
+	case 1:
+		if sessions[0] == message.SessionId {
+			break
+		}
+		//intentionally goes to default
+	default:
+		var innerResponse InnerResponse
+		innerResponse.Status = 423
+		innerResponse.Message = "Account deleted as for security protocol"
+		//todo delete account
+		return InnerResponseToString(innerResponse)
+	}
+	publicKey := GetPublicKey(message.To)
+	var innerResponse InnerResponse
+	if len(publicKey) == 0 {
+		innerResponse.Status = 404
+		innerResponse.Message = "User not found"
+	}
+	innerResponse.Status = 200
+	innerResponse.Message = "Public Key Found"
+	innerResponse.PublicKey = publicKey
+	return InnerResponseToString(innerResponse)
 }
 
 func Ping(message InnerMessage, userData UserData) []byte {
+	//todo check and send nonce
 	sessions := GetSessions(userData.User)
 	switch len(sessions) {
 	case 0:
-		var response Response
-		response.Status = 403
-		response.Message = "You are not currently authenticated"
-		return responseToString(response)
+		var innerResponse InnerResponse
+		innerResponse.Status = 403
+		innerResponse.Message = "You are not currently authenticated"
+		return InnerResponseToString(innerResponse)
 	case 1:
 		if sessions[0] == message.SessionId {
 			break
 		}
 		//intentionally goes to default
 	default:
-		var response Response
-		response.Status = 423
-		response.Message = "Account deleted as for security protocol"
+		var innerResponse InnerResponse
+		innerResponse.Status = 423
+		innerResponse.Message = "Account deleted as for security protocol"
 		//todo delete account
-		return responseToString(response)
+		return InnerResponseToString(innerResponse)
 	}
 	UpdateSession(message.SessionId)
 	sendable := GetNextMessage(userData.User)
@@ -219,10 +282,10 @@ func Ping(message InnerMessage, userData UserData) []byte {
 		sendable.Status = 200
 		toWrite,_ = json.Marshal(sendable)
 	} else {
-		var response Response
-		response.Status = 100
-		response.Message = "No messages found"
-		toWrite = responseToString(response)
+		var innerResponse InnerResponse
+		innerResponse.Status = 100
+		innerResponse.Message = "No messages found"
+		toWrite = InnerResponseToString(innerResponse)
 	}
 	return toWrite
 }
