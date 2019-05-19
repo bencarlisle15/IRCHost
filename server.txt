@@ -1,7 +1,7 @@
 register
 [user] [aesKey] [macKey] [iv] [mac] (messageType, nonce, password, publicKey)
 
-<- [iv] <H(m)> (status, nonce, message)
+<- [aesKey] [iv] <H(m)> (status, nonce, message)
 
 login
 [user] [aesKey] [iv] <H(m)> (messageType, nonce, password)
@@ -14,7 +14,7 @@ sendMessage
 <- [iv] <H(m)> (status, nonce, message)
 
 userQuery
-[user] [aesKey] [iv] <(m)> (messageType, nonce, to, sessionId)
+[user] [aesKey] [iv] <H(m)> (messageType, nonce, to, sessionId)
 
 <- [iv] <H(m)> (status, nonce, message, publicKey)
 

@@ -5,7 +5,7 @@ func IsValidRegisterMessage(message Message) bool {
 }
 
 func IsValidLoggedMessage(message Message) bool {
-	return message.User != "" && message.AESKey == "" && message.MACKey == "" && message.IV != "" && message.Mac != "" && message.Signature != "" && message.Data != ""
+	return message.User != "" && message.AESKey != "" && message.MACKey == "" && message.IV != "" && message.Mac == "" && message.Signature != "" && message.Data != ""
 }
 
 func IsValidRegister(message InnerMessage) bool {

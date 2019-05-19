@@ -41,21 +41,23 @@ func RegisterMessageHandler(encryptedMessage Message, privateKey *rsa.PrivateKey
 		var innerResponse InnerResponse
 		innerResponse.Status = 415
 		innerResponse.Message = "Incorrectly labeled"
-		toWrite = InnerResponseToString(innerResponse)
+		return InnerResponseToString(innerResponse)
 	}
-	ciphertext, responseIV := EncryptAES(toWrite, aesKey)
+	newAESKey := CreateAESKey()
+	ciphertext, responseIV := EncryptAES(toWrite, newAESKey)
 	if ciphertext == nil {
 		//todo
 		return nil
 	}
-	encodedCiphertext := make([]byte, base64.StdEncoding.EncodedLen(len(ciphertext)))
-	base64.StdEncoding.Encode(encodedCiphertext, []byte(ciphertext))
-	signature := Sign(privateKey, encodedCiphertext)
+	signature := Sign(privateKey, ciphertext)
 	//todo check
+	publicKeyBytes, err := base64.StdEncoding.DecodeString(innerMessage.PublicKey)
+	//todo invalid public key
 	var response Response
-	response.IV = string(responseIV)
-	response.Signature = string(signature)
-	response.Data = string(encodedCiphertext)
+	response.AESKey = EncryptRSA(publicKeyBytes, newAESKey)
+	response.IV = EncryptRSA(publicKeyBytes, responseIV)
+	response.Signature = base64.StdEncoding.EncodeToString(signature)
+	response.Data = base64.StdEncoding.EncodeToString(ciphertext)
 	return ResponseToString(response)
 }
 
@@ -63,7 +65,6 @@ func LoggedMessageHandler(encryptedMessage Message, privateKey *rsa.PrivateKey) 
 	message := DecryptMessage(encryptedMessage, privateKey)
 	userDataResults := GetUserData(message.User)
 	var userData UserData
-	var publicKey []byte
 	if len(userDataResults) == 0 {
 		var innerResponse InnerResponse
 		innerResponse.Status = 403
@@ -74,11 +75,13 @@ func LoggedMessageHandler(encryptedMessage Message, privateKey *rsa.PrivateKey) 
 		innerResponse.Status = 423
 		innerResponse.Message = "Account deleted as for security protocol"
 		return InnerResponseToString(innerResponse)
-	} else {
-		userData = userDataResults[0]
-		publicKey = []byte(userData.PublicKey)
 	}
-	if !VerifySignature(publicKey, []byte(message.Signature), []byte(message.Data)) {
+	userData = userDataResults[0]
+	publicKeyBytes, err := base64.StdEncoding.DecodeString(userData.PublicKey)
+	if err != nil {
+		return nil
+	}
+	if !VerifySignature(publicKeyBytes, []byte(message.Signature), []byte(message.Data)) {
 		//todo invalid signature
 		return nil
 	}
@@ -86,7 +89,7 @@ func LoggedMessageHandler(encryptedMessage Message, privateKey *rsa.PrivateKey) 
 	iv := []byte(message.IV)
 	var data = DecryptAESMessage([]byte(message.Data), aesKey, iv)
 	var innerMessage InnerMessage
-	var err = json.Unmarshal(data, &innerMessage)
+	err = json.Unmarshal(data, &innerMessage)
 	var toWrite []byte
 	if err == nil && IsValidLogIn(innerMessage) {
 		toWrite = LoginUser(innerMessage, userData)
@@ -100,9 +103,10 @@ func LoggedMessageHandler(encryptedMessage Message, privateKey *rsa.PrivateKey) 
 		var innerResponse InnerResponse
 		innerResponse.Status = 415
 		innerResponse.Message = "Incorrectly labeled"
-		toWrite = InnerResponseToString(innerResponse)
+		return InnerResponseToString(innerResponse)
 	}
-	ciphertext, responseIV := EncryptAES(toWrite, aesKey)
+	newAESKey := CreateAESKey()
+	ciphertext, responseIV := EncryptAES(toWrite, newAESKey)
 	if ciphertext == nil {
 		//todo
 		return nil
@@ -112,9 +116,10 @@ func LoggedMessageHandler(encryptedMessage Message, privateKey *rsa.PrivateKey) 
 	signature := Sign(privateKey, encodedCiphertext)
 	//todo check
 	var response Response
-	response.IV = string(responseIV)
-	response.Signature = string(signature)
-	response.Data = string(encodedCiphertext)
+	response.AESKey = EncryptRSA(publicKeyBytes, newAESKey)
+	response.IV = EncryptRSA(publicKeyBytes, responseIV)
+	response.Signature = base64.StdEncoding.EncodeToString(signature)
+	response.Data = base64.StdEncoding.EncodeToString(ciphertext)
 	return ResponseToString(response)
 }
 
@@ -167,12 +172,7 @@ func LoginUser(message InnerMessage, userData UserData) []byte {
 		loginResponse.Status = 202
 		loginResponse.Message = "You have successfully logged in"
 	}
-	toWrite, err := json.Marshal(loginResponse)
-	if err != nil {
-		//todo error occurred
-		return nil
-	}
-	return toWrite
+	return InnerResponseToString(loginResponse)
 }
 
 func InnerResponseToString(innerResponse InnerResponse) []byte {

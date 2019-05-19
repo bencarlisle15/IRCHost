@@ -5,7 +5,7 @@ import "time"
 func Sweep() {
 	for {
 		SweepSessions()
-		//SweepMessages()
+		SweepMessages()
 		time.Sleep(100)
 	}
 }

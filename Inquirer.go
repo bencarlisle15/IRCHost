@@ -12,8 +12,6 @@ type UserData struct {
 	User string `json:"user"`
 	Hash string `json:"hash"`
 	Salt string `json:"salt"`
-	AESKey string `json:"aeskey"`
-	MACKey string `json:"mackey"`
 	PublicKey string `json:"publickey"`
 }
 
@@ -21,13 +19,14 @@ func CreateResults(rows *sql.Rows) []UserData {
 	results := make([]UserData, 0)
 	var currentUser UserData
 	for rows.Next() {
-		_ = rows.Scan(&currentUser.User, &currentUser.Hash, &currentUser.Salt, &currentUser.AESKey, &currentUser.MACKey)
+		_ = rows.Scan(&currentUser.User, &currentUser.Hash, &currentUser.Salt, &currentUser.PublicKey)
 		results = append(results, currentUser)
+		break
 	}
 	return results
 }
 
-func AddUser(user string, password, salt, publicKey []byte) bool {
+func AddUser(user string, hash, salt, publicKey []byte) bool {
 	database, _ := sql.Open("sqlite3", "database.db")
 	defer database.Close()
 	rows, _ := database.Query("SELECT * FROM Users WHERE user=?", user)
@@ -37,7 +36,7 @@ func AddUser(user string, password, salt, publicKey []byte) bool {
 	}
 	statement, _ := database.Prepare("INSERT INTO Users VALUES (?, ?, ?, ?)")
 	defer statement.Close()
-	_, err := statement.Exec(user, password, salt, publicKey)
+	_, err := statement.Exec(user, hash, salt, publicKey)
 	return err == nil
 }
 
@@ -51,6 +50,7 @@ func GetUserData(user string) []UserData {
 
 func AddSessionID(user string, sessionID string) bool {
 	database, _ := sql.Open("sqlite3", "database.db")
+	defer database.Close()
 	statement, _ := database.Prepare("INSERT INTO Sessions VALUES (?, ?, ?)")
 	defer statement.Close()
 	_, err := statement.Exec(user, sessionID, GetEpoch())
@@ -60,11 +60,9 @@ func AddSessionID(user string, sessionID string) bool {
 func SweepSessions() {
 	database, _ := sql.Open("sqlite3", "database.db")
 	defer database.Close()
-	rows,err := database.Exec("DELETE FROM Sessions WHERE timestamp <= ?", GetEpoch()-10)
-	if err != nil {
-		fmt.Print("ERR ")
-		fmt.Println(err)
-	}
+	statement, _ := database.Prepare("DELETE FROM Sessions WHERE timestamp <= ?")
+	defer statement.Close()
+	rows,_ := statement.Exec(GetEpoch()-10)
 	affected, _ := rows.RowsAffected()
 	if affected > 0 {
 		fmt.Println("Swept " + strconv.Itoa(int(affected)) + " sessions")
@@ -73,7 +71,9 @@ func SweepSessions() {
 func SweepMessages() {
 	database, _ := sql.Open("sqlite3", "database.db")
 	defer database.Close()
-	rows, _ := database.Exec("DELETE FROM Messages WHERE timestamp <= ?", GetEpoch()-10)
+	statement, _ := database.Prepare("DELETE FROM Messages WHERE timestamp <= ?")
+	defer statement.Close()
+	rows, _ := statement.Exec(GetEpoch()-10)
 	affected, _ := rows.RowsAffected()
 	if affected > 0 {
 		fmt.Println("Swept " + strconv.Itoa(int(affected)) + " messages")
@@ -96,28 +96,29 @@ func GetSessions(user string) []string {
 func UpdateSession(sessionId string) {
 	database, _ := sql.Open("sqlite3", "database.db")
 	defer database.Close()
-	_, _ = database.Exec("UPDATE Sessions SET timestamp=? WHERE sessionId=?", GetEpoch(), sessionId)
+	statement, _ := database.Prepare("UPDATE Sessions SET timestamp=? WHERE sessionId=?")
+	defer statement.Close()
+	_,_ = statement.Exec(GetEpoch(), sessionId)
 }
 
 func GetNextMessage(user string) Sendable {
 	database, _ := sql.Open("sqlite3", "database.db")
 	defer database.Close()
-	rows,_ := database.Query("SELECT * FROM Messages WHERE receiver=?", user)
-	defer rows.Close()
 	var sendable Sendable
+	rows,_ := database.Query("SELECT * FROM Messages WHERE receiver=? LIMIT 1", user)
 	if !rows.Next() {
+		rows.Close()
 		return sendable
 	}
-	var timestamp string
-	err := rows.Scan(&sendable.Receiver, &sendable.Sender, &sendable.Message, &sendable.IsFile, &timestamp)
-	fmt.Print("ERR1 ")
-	fmt.Println(err)
-	deletedRows, err := database.Query("DELETE FROM Messages WHERE receiver=? AND sender=? AND message=? && isFile=? LIMIT 1", sendable.Receiver, sendable.Sender, sendable.Message, sendable.IsFile)
-	defer deletedRows.Close()
-	fmt.Print("Rows ")
-	fmt.Println(deletedRows)
-	fmt.Print("Err ")
-	fmt.Println(err)
+	//todo nonce
+	_ = rows.Scan(&sendable.Receiver, &sendable.Sender, &sendable.Message, &sendable.IsFile, &sendable.Timestamp)
+	rows.Close()
+	database.Close()
+	database, _ = sql.Open("sqlite3", "database.db")
+	defer database.Close()
+	statement, _ := database.Prepare("DELETE FROM Messages WHERE timestamp in (SELECT timestamp FROM Messages WHERE receiver=? AND sender=? AND message=? AND timestamp=?)")
+	defer statement.Close()
+	_,_ = statement.Exec(sendable.Receiver, sendable.Sender, sendable.Message, sendable.Timestamp)
 	return sendable
 }
 

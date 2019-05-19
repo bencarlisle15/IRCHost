@@ -24,9 +24,22 @@ func DecryptMessage(encryptedMessage Message, privateKey *rsa.PrivateKey) Messag
 	message.IV = string(DecryptRSA(encryptedMessage.IV, privateKey))
 	message.AESKey = string(DecryptRSA(encryptedMessage.AESKey, privateKey))
 	message.MACKey = string(DecryptRSA(encryptedMessage.MACKey, privateKey))
-	data, _ := base64.StdEncoding.DecodeString(encryptedMessage.Data)
-	message.Data = string(data)
+	signature, _ := base64.StdEncoding.DecodeString(encryptedMessage.Signature)
+	message.Signature = string(signature)
+	message.Data = encryptedMessage.Data
 	return message
+}
+
+func EncryptRSA(publicKeyBytes, data []byte) string {
+	publicKey := GetPublicKeyFromBytes(publicKeyBytes)
+	if publicKey == nil {
+		return ""
+	}
+	ciphertext, err := rsa.EncryptPKCS1v15(rand.Reader, publicKey, data)
+	if err != nil {
+		return ""
+	}
+	return base64.StdEncoding.EncodeToString(ciphertext)
 }
 
 func GetPrivateKey() *rsa.PrivateKey {
@@ -46,8 +59,9 @@ func DecryptAESMACMessage(ciphertext []byte, aesKey []byte, macKey []byte, iv []
 	return DecryptAESMessage(ciphertext, aesKey, iv)
 }
 
-func DecryptAESMessage(ciphertext []byte, aesKey []byte, iv []byte) []byte {
+func DecryptAESMessage(data []byte, aesKey []byte, iv []byte) []byte {
 	block, err := aes.NewCipher(aesKey)
+	ciphertext, _ := base64.StdEncoding.DecodeString(string(data))
 	if err != nil {
 		return nil
 	}
@@ -99,6 +113,15 @@ func DecryptRSA(message string, privateKey *rsa.PrivateKey) []byte {
 	return plaintext
 }
 
+func GetPublicKeyFromBytes(publicKeyBytes []byte) *rsa.PublicKey {
+	publicKeyInterface, err := x509.ParsePKIXPublicKey(publicKeyBytes)
+	if err != nil {
+		return nil
+	}
+	publicKey, _ := publicKeyInterface.(*rsa.PublicKey)
+	return publicKey
+}
+
 func GetIV() []byte {
 	iv := make([]byte, BlockSize)
 	_, err := io.ReadFull(rand.Reader, iv)
@@ -119,8 +142,8 @@ func Sign(privateKey *rsa.PrivateKey, message []byte) []byte {
 }
 
 func VerifySignature(publicKeyBytes []byte, signature []byte, message []byte) bool {
-	publicKey, err := x509.ParsePKCS1PublicKey(publicKeyBytes)
-	if err == nil {
+	publicKey := GetPublicKeyFromBytes(publicKeyBytes)
+	if publicKey == nil {
 		return false
 	}
 	hashed := GetHash(message)
@@ -141,6 +164,15 @@ func EncryptAES(plaintext []byte, aesKey []byte) ([]byte, []byte) {
 	mode := cipher.NewCBCEncrypter(block, iv)
 	mode.CryptBlocks(ciphertext, paddedPlaintext)
 	return ciphertext, iv
+}
+
+func CreateAESKey() []byte {
+	aesKey := make([]byte, 32)
+	_, err := io.ReadFull(rand.Reader, aesKey)
+	if err != nil {
+		return nil
+	}
+	return aesKey
 }
 
 func PadPlaintext(plaintext []byte) []byte {

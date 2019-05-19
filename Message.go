@@ -22,6 +22,7 @@ type InnerMessage struct {
 }
 
 type Response struct {
+	AESKey string `json:"aesKey"`
 	IV string `json:"iv"`
 	Signature string `json:"signature"`
 	Data string `json:"data"`
@@ -41,5 +42,6 @@ type Sendable struct {
 	Receiver string `json:"receiver"`
 	Sender string `json:"sender"`
 	Message string `json:"message"`
+	Timestamp int `json:"timestamp"`
 	IsFile bool `json:"isFile"`
 }
