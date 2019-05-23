@@ -1,26 +1,32 @@
 package main
 
 import (
-	"crypto/rand"
 	"crypto/rsa"
 	"encoding/base64"
 	"encoding/json"
-	"io"
 )
 
 func RequestHandler(response []byte, privateKey *rsa.PrivateKey) []byte {
 	var message Message
-	var err = json.Unmarshal(response, &message)
-	var toWrite = []byte("An error occurred")
-	if err != nil {
-		//todo error occurred
-	}
-	if IsValidRegisterMessage(message) {
+	var toWrite []byte
+	err := json.Unmarshal(response, &message)
+	errorOccurred := false
+	if err == nil && IsValidRegisterMessage(message) {
 		toWrite = RegisterMessageHandler(message, privateKey)
-	} else if IsValidLoggedMessage(message) {
-		toWrite = LoggedMessageHandler(message, privateKey)
+	} else if err == nil && IsValidLoggedInMessage(message) {
+		toWrite = LoggedInMessageHandler(message, privateKey)
 	} else {
-		//todo error occurred
+		errorOccurred = true
+	}
+	if errorOccurred || toWrite == nil {
+		var response InnerResponse
+		response.Status = 400
+		response.Nonce = GenerateNonce()
+		response.Message = "An error occurred"
+		toWrite = InnerResponseToString(response)
+		if toWrite == nil {
+			toWrite = []byte("An error occurred")
+		}
 	}
 	return toWrite
 }
@@ -35,24 +41,30 @@ func RegisterMessageHandler(encryptedMessage Message, privateKey *rsa.PrivateKey
 	var innerMessage InnerMessage
 	var err = json.Unmarshal(data, &innerMessage)
 	var toWrite []byte
-	if err == nil && IsValidRegister(innerMessage) {
-		toWrite = RegisterUser(innerMessage, message.User)
+	if err == nil && IsValidRegister(innerMessage) && IsValidNonce(innerMessage.Nonce) {
+		if len(message.User) > 127 || len(message.User) < 4 {
+			var innerResponse InnerResponse
+			innerResponse.Nonce = GenerateNonce()
+			innerResponse.Status = 406
+			innerResponse.Message = "Invalid Username Length"
+			toWrite = InnerResponseToString(innerResponse)
+		} else {
+			toWrite = RegisterUser(innerMessage, message.User)
+		}
 	} else {
 		var innerResponse InnerResponse
+		innerResponse.Nonce = GenerateNonce()
 		innerResponse.Status = 415
 		innerResponse.Message = "Incorrectly labeled"
-		return InnerResponseToString(innerResponse)
+		toWrite = InnerResponseToString(innerResponse)
 	}
 	newAESKey := CreateAESKey()
 	ciphertext, responseIV := EncryptAES(toWrite, newAESKey)
 	if ciphertext == nil {
-		//todo
 		return nil
 	}
 	signature := Sign(privateKey, ciphertext)
-	//todo check
-	publicKeyBytes, err := base64.StdEncoding.DecodeString(innerMessage.PublicKey)
-	//todo invalid public key
+	publicKeyBytes, _ := base64.StdEncoding.DecodeString(innerMessage.PublicKey)
 	var response Response
 	response.AESKey = EncryptRSA(publicKeyBytes, newAESKey)
 	response.IV = EncryptRSA(publicKeyBytes, responseIV)
@@ -61,17 +73,19 @@ func RegisterMessageHandler(encryptedMessage Message, privateKey *rsa.PrivateKey
 	return ResponseToString(response)
 }
 
-func LoggedMessageHandler(encryptedMessage Message, privateKey *rsa.PrivateKey) []byte {
+func LoggedInMessageHandler(encryptedMessage Message, privateKey *rsa.PrivateKey) []byte {
 	message := DecryptMessage(encryptedMessage, privateKey)
 	userDataResults := GetUserData(message.User)
 	var userData UserData
 	if len(userDataResults) == 0 {
 		var innerResponse InnerResponse
+		innerResponse.Nonce = GenerateNonce()
 		innerResponse.Status = 403
 		innerResponse.Message = "User does not exist"
 		return InnerResponseToString(innerResponse)
 	} else if len(userDataResults) > 1 {
 		var innerResponse InnerResponse
+		innerResponse.Nonce = GenerateNonce()
 		innerResponse.Status = 423
 		innerResponse.Message = "Account deleted as for security protocol"
 		return InnerResponseToString(innerResponse)
@@ -82,7 +96,6 @@ func LoggedMessageHandler(encryptedMessage Message, privateKey *rsa.PrivateKey) 
 		return nil
 	}
 	if !VerifySignature(publicKeyBytes, []byte(message.Signature), []byte(message.Data)) {
-		//todo invalid signature
 		return nil
 	}
 	aesKey := []byte(message.AESKey)
@@ -91,30 +104,29 @@ func LoggedMessageHandler(encryptedMessage Message, privateKey *rsa.PrivateKey) 
 	var innerMessage InnerMessage
 	err = json.Unmarshal(data, &innerMessage)
 	var toWrite []byte
-	if err == nil && IsValidLogIn(innerMessage) {
+	if err == nil && IsValidLogIn(innerMessage) && IsValidNonce(innerMessage.Nonce) {
 		toWrite = LoginUser(innerMessage, userData)
-	} else if err == nil && IsValidRequest(innerMessage) {
+	} else if err == nil && IsValidRequest(innerMessage) && IsValidNonce(innerMessage.Nonce) {
 		toWrite = SendRequest(innerMessage, userData)
-	} else if err == nil && isValidUserQuery(innerMessage) {
+	} else if err == nil && isValidUserQuery(innerMessage) && IsValidNonce(innerMessage.Nonce) {
 		toWrite = SendUserQuery(innerMessage, userData)
-	} else if err == nil && IsValidPing(innerMessage) {
+	} else if err == nil && IsValidPing(innerMessage) && IsValidNonce(innerMessage.Nonce) {
 		toWrite = Ping(innerMessage, userData)
 	} else {
 		var innerResponse InnerResponse
+		innerResponse.Nonce = GenerateNonce()
 		innerResponse.Status = 415
 		innerResponse.Message = "Incorrectly labeled"
-		return InnerResponseToString(innerResponse)
+		toWrite = InnerResponseToString(innerResponse)
 	}
 	newAESKey := CreateAESKey()
 	ciphertext, responseIV := EncryptAES(toWrite, newAESKey)
 	if ciphertext == nil {
-		//todo
 		return nil
 	}
 	encodedCiphertext := make([]byte, base64.StdEncoding.EncodedLen(len(ciphertext)))
 	base64.StdEncoding.Encode(encodedCiphertext, []byte(ciphertext))
 	signature := Sign(privateKey, encodedCiphertext)
-	//todo check
 	var response Response
 	response.AESKey = EncryptRSA(publicKeyBytes, newAESKey)
 	response.IV = EncryptRSA(publicKeyBytes, responseIV)
@@ -123,19 +135,10 @@ func LoggedMessageHandler(encryptedMessage Message, privateKey *rsa.PrivateKey) 
 	return ResponseToString(response)
 }
 
-//func PrintMessage(message Message) string {
-//	return "User: " + message.User + "\nIV: " + message.IV + "\nMAC: " + message.Mac + "\nAESKey: " + message.AESKey + "\nMACKey: " + message.MACKey + "\nData: " + message.Data
-//}
-
 func RegisterUser(message InnerMessage, user string) []byte {
-	//todo check nonce
 	var innerResponse InnerResponse
-	salt := make([]byte, 64)
-	_, err := io.ReadFull(rand.Reader, salt)
-	if err != nil {
-		//todo error occurred
-		return []byte("An error occurred")
-	}
+	innerResponse.Nonce = GenerateNonce()
+	salt := GenerateSalt()
 	hashedPassword := HashPassword(message.Password, salt)
 	if AddUser(user, hashedPassword, salt, []byte(message.PublicKey)) {
 		innerResponse.Status = 201
@@ -148,22 +151,18 @@ func RegisterUser(message InnerMessage, user string) []byte {
 }
 
 func LoginUser(message InnerMessage, userData UserData) []byte {
-	//todo check nonce
 	hashed := HashPassword(message.Password, []byte(userData.Salt))
 	if !EqualBytes(hashed, []byte(userData.Hash)) {
 		var innerResponse InnerResponse
+		innerResponse.Nonce = GenerateNonce()
 		innerResponse.Status = 401
 		innerResponse.Message = "Incorrect username or password"
 		return InnerResponseToString(innerResponse)
 	}
-	sessionIDBytes := make([]byte, 64)
-	_, err := io.ReadFull(rand.Reader, sessionIDBytes)
+	sessionIDBytes := GenerateSessionID()
 	sessionID := base64.StdEncoding.EncodeToString(sessionIDBytes)
-	if err != nil {
-		//todo error occurred
-		return nil
-	}
 	var loginResponse InnerResponse
+	loginResponse.Nonce = GenerateNonce()
 	loginResponse.SessionId = string(sessionID)
 	if !AddSessionID(userData.User, sessionID) {
 		loginResponse.Status = 423
@@ -175,30 +174,12 @@ func LoginUser(message InnerMessage, userData UserData) []byte {
 	return InnerResponseToString(loginResponse)
 }
 
-func InnerResponseToString(innerResponse InnerResponse) []byte {
-	toWrite, err := json.Marshal(innerResponse)
-	if err != nil {
-		//todo error occurred
-		return nil
-	}
-	return toWrite
-}
-
-func ResponseToString(response Response) []byte {
-	toWrite, err := json.Marshal(response)
-	if err != nil {
-		//todo error occurred
-		return nil
-	}
-	return toWrite
-}
-
 func SendRequest(message InnerMessage, userData UserData) []byte {
-	//todo check and send nonce
 	sessions := GetSessions(userData.User)
 	switch len(sessions) {
 	case 0:
 		var innerResponse InnerResponse
+		innerResponse.Nonce = GenerateNonce()
 		innerResponse.Status = 403
 		innerResponse.Message = "You are not currently authenticated"
 		return InnerResponseToString(innerResponse)
@@ -209,24 +190,26 @@ func SendRequest(message InnerMessage, userData UserData) []byte {
 		//intentionally goes to default
 	default:
 		var innerResponse InnerResponse
+		innerResponse.Nonce = GenerateNonce()
 		innerResponse.Status = 423
 		innerResponse.Message = "Account deleted as for security protocol"
-		//todo delete account
+		DeleteAccount(userData.User)
 		return InnerResponseToString(innerResponse)
 	}
 	AddMessage(message.To, userData.User, message.Message, message.IsFile)
 	var innerResponse InnerResponse
+	innerResponse.Nonce = GenerateNonce()
 	innerResponse.Status = 200
 	innerResponse.Message = "Message successfully sent"
 	return InnerResponseToString(innerResponse)
 }
 
 func SendUserQuery(message InnerMessage, userData UserData) []byte {
-	//todo check and send nonce
 	sessions := GetSessions(userData.User)
 	switch len(sessions) {
 	case 0:
 		var innerResponse InnerResponse
+		innerResponse.Nonce = GenerateNonce()
 		innerResponse.Status = 403
 		innerResponse.Message = "You are not currently authenticated"
 		return InnerResponseToString(innerResponse)
@@ -237,29 +220,32 @@ func SendUserQuery(message InnerMessage, userData UserData) []byte {
 		//intentionally goes to default
 	default:
 		var innerResponse InnerResponse
+		innerResponse.Nonce = GenerateNonce()
 		innerResponse.Status = 423
 		innerResponse.Message = "Account deleted as for security protocol"
-		//todo delete account
+		DeleteAccount(userData.User)
 		return InnerResponseToString(innerResponse)
 	}
 	publicKey := GetPublicKey(message.To)
 	var innerResponse InnerResponse
+	innerResponse.Nonce = GenerateNonce()
 	if len(publicKey) == 0 {
 		innerResponse.Status = 404
 		innerResponse.Message = "User not found"
+	} else {
+		innerResponse.Status = 200
+		innerResponse.Message = "Public Key Found"
+		innerResponse.PublicKey = publicKey
 	}
-	innerResponse.Status = 200
-	innerResponse.Message = "Public Key Found"
-	innerResponse.PublicKey = publicKey
 	return InnerResponseToString(innerResponse)
 }
 
 func Ping(message InnerMessage, userData UserData) []byte {
-	//todo check and send nonce
 	sessions := GetSessions(userData.User)
 	switch len(sessions) {
 	case 0:
 		var innerResponse InnerResponse
+		innerResponse.Nonce = GenerateNonce()
 		innerResponse.Status = 403
 		innerResponse.Message = "You are not currently authenticated"
 		return InnerResponseToString(innerResponse)
@@ -270,9 +256,10 @@ func Ping(message InnerMessage, userData UserData) []byte {
 		//intentionally goes to default
 	default:
 		var innerResponse InnerResponse
+		innerResponse.Nonce = GenerateNonce()
 		innerResponse.Status = 423
 		innerResponse.Message = "Account deleted as for security protocol"
-		//todo delete account
+		DeleteAccount(userData.User)
 		return InnerResponseToString(innerResponse)
 	}
 	UpdateSession(message.SessionId)
@@ -280,9 +267,11 @@ func Ping(message InnerMessage, userData UserData) []byte {
 	var toWrite []byte
 	if sendable.Sender != "" {
 		sendable.Status = 200
-		toWrite,_ = json.Marshal(sendable)
+		sendable.Nonce = GenerateNonce()
+		toWrite, _ = json.Marshal(sendable)
 	} else {
 		var innerResponse InnerResponse
+		innerResponse.Nonce = GenerateNonce()
 		innerResponse.Status = 100
 		innerResponse.Message = "No messages found"
 		toWrite = InnerResponseToString(innerResponse)

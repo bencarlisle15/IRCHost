@@ -5,7 +5,6 @@ import (
 	"fmt"
 	_ "github.com/mattn/go-sqlite3"
 	"strconv"
-	"time"
 )
 
 type UserData struct {
@@ -32,6 +31,11 @@ func AddUser(user string, hash, salt, publicKey []byte) bool {
 	rows, _ := database.Query("SELECT * FROM Users WHERE user=?", user)
 	defer rows.Close()
 	if rows.Next() {
+		return false
+	}
+	invalidRows, _ := database.Query("SELECT * FROM InvalidUsers WHERE user=?", user)
+	defer invalidRows.Close()
+	if invalidRows.Next() {
 		return false
 	}
 	statement, _ := database.Prepare("INSERT INTO Users VALUES (?, ?, ?, ?)")
@@ -80,6 +84,22 @@ func SweepMessages() {
 	}
 }
 
+func IsValidNonce(nonce string) bool {
+	database, _ := sql.Open("sqlite3", "database.db")
+	defer database.Close()
+	rows, _ := database.Query("SELECT nonce FROM Nonces WHERE nonce=?", nonce)
+	defer rows.Close()
+	if rows.Next() {
+		fmt.Print(nonce)
+		fmt.Println(" FAILED")
+		return false
+	}
+	statement,_ := database.Prepare("INSERT INTO Nonces VALUES (?)")
+	defer statement.Close()
+	_,_ = statement.Exec(nonce)
+	return true
+}
+
 func GetSessions(user string) []string {
 	database, _ := sql.Open("sqlite3", "database.db")
 	defer database.Close()
@@ -107,15 +127,10 @@ func GetNextMessage(user string) Sendable {
 	var sendable Sendable
 	rows,_ := database.Query("SELECT * FROM Messages WHERE receiver=? LIMIT 1", user)
 	if !rows.Next() {
-		rows.Close()
 		return sendable
 	}
-	//todo nonce
 	_ = rows.Scan(&sendable.Receiver, &sendable.Sender, &sendable.Message, &sendable.IsFile, &sendable.Timestamp)
 	rows.Close()
-	database.Close()
-	database, _ = sql.Open("sqlite3", "database.db")
-	defer database.Close()
 	statement, _ := database.Prepare("DELETE FROM Messages WHERE timestamp in (SELECT timestamp FROM Messages WHERE receiver=? AND sender=? AND message=? AND timestamp=?)")
 	defer statement.Close()
 	_,_ = statement.Exec(sendable.Receiver, sendable.Sender, sendable.Message, sendable.Timestamp)
@@ -130,8 +145,11 @@ func AddMessage(to string, from string, message string, isFile bool) {
 	_, _ = statement.Exec(to, from, message, isFile, GetEpoch())
 }
 
-func GetEpoch() int64 {
-	return time.Now().Unix()
+func CreateDatabase() bool {
+	database, _ := sql.Open("sqlite3", "database.db")
+	defer database.Close()
+	_,err := database.Exec("CREATE TABLE Sessions (user varchar(128) not null, sessionId varchar(4096) not null, timestamp integer); CREATE TABLE Messages(receiver varchar(128) not null, sender varchar(128) not null, message CLOB not null, isFile bool not null, timestamp integer); CREATE TABLE Users (user varchar(128) not null, hash varchar(512) not null, salt varchar(512) not null, publickey varchar(4096) not null); CREATE TABLE Nonces(nonce INTEGER NOT NULL); CREATE TABLE InvalidUsers(user varchar(128) not null);")
+	return err == nil
 }
 
 func GetPublicKey(user string) string {
@@ -140,4 +158,15 @@ func GetPublicKey(user string) string {
 		return ""
 	}
 	return userData[0].PublicKey
+}
+
+func DeleteAccount(user string) {
+	database, _ := sql.Open("sqlite3", "database.db")
+	defer database.Close()
+	statement, _ := database.Prepare("DELETE FROM Users WHERE user=?")
+	defer statement.Close()
+	_,_ = statement.Exec(user)
+	insertStatement, _ := database.Prepare("INSERT INTO InvalidUsers VALUES (?)")
+	defer insertStatement.Close()
+	_,_ = insertStatement.Exec(user)
 }

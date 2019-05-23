@@ -20,5 +20,6 @@
         <method importPath="database/sql" receiver="*Rows" name="Close" />
       </methods>
     </inspection_tool>
+    <inspection_tool class="SqlDialectInspection" enabled="false" level="WARNING" enabled_by_default="false" />
   </profile>
 </component>

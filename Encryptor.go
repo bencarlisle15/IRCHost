@@ -11,6 +11,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
+	"fmt"
 	"io"
 	"io/ioutil"
 )
@@ -30,13 +31,23 @@ func DecryptMessage(encryptedMessage Message, privateKey *rsa.PrivateKey) Messag
 	return message
 }
 
+func GetRandomBytes(length int) []byte {
+	randomBytes := make([]byte, length)
+	_, _ = io.ReadFull(rand.Reader, randomBytes)
+	return randomBytes
+}
+
+func GenerateNonce() string {
+	return string(GetRandomBytes(4096))
+}
+
 func EncryptRSA(publicKeyBytes, data []byte) string {
 	publicKey := GetPublicKeyFromBytes(publicKeyBytes)
-	if publicKey == nil {
+	if publicKey == nil || data == nil {
 		return ""
 	}
-	ciphertext, err := rsa.EncryptPKCS1v15(rand.Reader, publicKey, data)
-	if err != nil {
+	ciphertext, _ := rsa.EncryptOAEP(sha512.New(), rand.Reader, publicKey, data, nil)
+	if ciphertext == nil {
 		return ""
 	}
 	return base64.StdEncoding.EncodeToString(ciphertext)
@@ -44,6 +55,9 @@ func EncryptRSA(publicKeyBytes, data []byte) string {
 
 func GetPrivateKey() *rsa.PrivateKey {
 	privatePEM, _ := ioutil.ReadFile("PrivateKey.pem")
+	if privatePEM == nil {
+		return nil
+	}
 	block, _ := pem.Decode([]byte(privatePEM))
 	if block == nil {
 		return nil
@@ -60,23 +74,35 @@ func DecryptAESMACMessage(ciphertext []byte, aesKey []byte, macKey []byte, iv []
 }
 
 func DecryptAESMessage(data []byte, aesKey []byte, iv []byte) []byte {
-	block, err := aes.NewCipher(aesKey)
-	ciphertext, _ := base64.StdEncoding.DecodeString(string(data))
-	if err != nil {
+	if data == nil || aesKey == nil || iv == nil {
 		return nil
 	}
-	if len(ciphertext) % aes.BlockSize != 0 {
+	block, _ := aes.NewCipher(aesKey)
+	ciphertext, _ := base64.StdEncoding.DecodeString(string(data))
+	if block == nil || len(ciphertext) % aes.BlockSize != 0 {
 		return nil
 	}
 	mode := cipher.NewCBCDecrypter(block, []byte(iv))
+	if mode == nil {
+		return nil
+	}
 	mode.CryptBlocks(ciphertext, ciphertext)
 	return TrimPadding(ciphertext)
 }
 
 func ValidMac(messageMac []byte, ciphertext []byte, key []byte) bool {
+	if messageMac == nil || ciphertext == nil || key == nil {
+		return false
+	}
 	mac := hmac.New(sha512.New, key)
+	if mac == nil {
+		return false
+	}
 	mac.Write(ciphertext)
 	expectedMAC := mac.Sum(nil)
+	if expectedMAC == nil {
+		return false
+	}
 	return hmac.Equal(messageMac, expectedMAC)
 }
 
@@ -93,6 +119,7 @@ func TrimPadding(plaintext []byte) []byte {
 	for i := paddingStart; i < len(plaintext); i++ {
 		if plaintext[i] != padding {
 			validPadding = false
+			break
 		}
 	}
 	if !validPadding {
@@ -101,81 +128,105 @@ func TrimPadding(plaintext []byte) []byte {
 	return plaintext[:paddingStart]
 }
 
-func DecryptRSA(message string, privateKey *rsa.PrivateKey) []byte {
-	decodedMessage, err := base64.StdEncoding.DecodeString(message)
-	if err != nil {
-		return nil
+func DecryptRSA(message string, privateKey *rsa.PrivateKey) string {
+	decodedMessage, _ := base64.StdEncoding.DecodeString(message)
+	if decodedMessage == nil || privateKey == nil {
+		fmt.Println("ERROR")
+		return ""
 	}
-	plaintext, err := rsa.DecryptPKCS1v15(rand.Reader, privateKey, decodedMessage)
-	if err != nil {
-		return nil
+	plaintext, _ := rsa.DecryptOAEP(sha512.New(), rand.Reader, privateKey, decodedMessage, nil)
+	if plaintext == nil {
+		return ""
 	}
-	return plaintext
+	return string(plaintext)
 }
 
 func GetPublicKeyFromBytes(publicKeyBytes []byte) *rsa.PublicKey {
-	publicKeyInterface, err := x509.ParsePKIXPublicKey(publicKeyBytes)
-	if err != nil {
+	if publicKeyBytes == nil {
+		return nil
+	}
+	publicKeyInterface, _ := x509.ParsePKIXPublicKey(publicKeyBytes)
+	if publicKeyInterface == nil {
 		return nil
 	}
 	publicKey, _ := publicKeyInterface.(*rsa.PublicKey)
 	return publicKey
 }
 
+func GenerateSessionID() []byte {
+	return GetRandomBytes(64)
+}
+
+func GenerateSalt() []byte {
+	return GetRandomBytes(64)
+}
+
 func GetIV() []byte {
-	iv := make([]byte, BlockSize)
-	_, err := io.ReadFull(rand.Reader, iv)
-	if err != nil {
-		return nil
-	}
-	return iv
+	return GetRandomBytes(16)
 }
 
 func Sign(privateKey *rsa.PrivateKey, message []byte) []byte {
-	hashed := GetHash(message)
-	signature, err := rsa.SignPKCS1v15(rand.Reader, privateKey, crypto.SHA512, hashed[:])
-	if err != nil {
-		return signature
-	} else {
+	if privateKey == nil || message == nil {
 		return nil
 	}
+	hashed := GetHash(message)
+	if hashed == nil {
+		return nil
+	}
+	signature, _ := rsa.SignPSS(rand.Reader, privateKey, crypto.SHA512, hashed[:], nil)
+	return signature
 }
 
 func VerifySignature(publicKeyBytes []byte, signature []byte, message []byte) bool {
+	if publicKeyBytes == nil || signature == nil || message == nil {
+		return false
+	}
 	publicKey := GetPublicKeyFromBytes(publicKeyBytes)
 	if publicKey == nil {
 		return false
 	}
 	hashed := GetHash(message)
-	return rsa.VerifyPKCS1v15(publicKey, crypto.SHA512, hashed[:], signature) != nil
+	if hashed == nil {
+		return false
+	}
+	return rsa.VerifyPSS(publicKey, crypto.SHA512, hashed[:], signature, nil) == nil
 }
 
 func EncryptAES(plaintext []byte, aesKey []byte) ([]byte, []byte) {
-	block, err := aes.NewCipher(aesKey)
-	if err != nil {
+	if aesKey == nil || plaintext == nil {
+		return nil, nil
+	}
+	block, _ := aes.NewCipher(aesKey)
+	if block == nil {
 		return nil, nil
 	}
 	paddedPlaintext := PadPlaintext(plaintext)
+	if paddedPlaintext == nil {
+		return nil,nil
+	}
 	ciphertext := make([]byte, len(paddedPlaintext))
 	iv := GetIV()
 	if iv == nil {
 		return nil, nil
 	}
 	mode := cipher.NewCBCEncrypter(block, iv)
+	if mode == nil {
+		return nil,nil
+	}
 	mode.CryptBlocks(ciphertext, paddedPlaintext)
 	return ciphertext, iv
 }
 
 func CreateAESKey() []byte {
 	aesKey := make([]byte, 32)
-	_, err := io.ReadFull(rand.Reader, aesKey)
-	if err != nil {
-		return nil
-	}
+	_, _ = io.ReadFull(rand.Reader, aesKey)
 	return aesKey
 }
 
 func PadPlaintext(plaintext []byte) []byte {
+	if plaintext == nil {
+		return nil
+	}
 	paddingNeeded := BlockSize - (len(plaintext) % BlockSize)
 	if paddingNeeded == 0 {
 		paddingNeeded = BlockSize
@@ -187,6 +238,9 @@ func PadPlaintext(plaintext []byte) []byte {
 }
 
 func HashPassword(password string, salt []byte) []byte {
+	if salt == nil {
+		return nil
+	}
 	salted := []byte(password)
 	for i := 0; i < len(salt); i++ {
 		salted = append(salted, salt[i])
@@ -195,7 +249,7 @@ func HashPassword(password string, salt []byte) []byte {
 }
 
 func EqualBytes(byte1, byte2 []byte) bool {
-	if len(byte1) != len(byte2) {
+	if byte1 == nil || byte2 == nil || len(byte1) != len(byte2) {
 		return false
 	}
 	for i := 0; i < len(byte1); i++ {
@@ -207,6 +261,9 @@ func EqualBytes(byte1, byte2 []byte) bool {
 }
 
 func GetHash(toHash []byte) []byte {
+	if toHash == nil {
+		return nil
+	}
 	hash := sha512.New()
 	hash.Write(toHash)
 	return hash.Sum(nil)

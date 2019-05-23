@@ -3,11 +3,16 @@ package main
 import (
 	"fmt"
 	"net"
+	"os"
 	"time"
 )
 
 func main() {
 	l, err := net.Listen("tcp4", "127.0.0.1:1515")
+	if !CheckForDatabase() {
+		fmt.Println("Database could not be created")
+		return
+	}
 	if err != nil {
 		fmt.Println(err)
 		time.Sleep(100)
@@ -27,4 +32,14 @@ func main() {
 		}
 		go executor.AddConnection(c)
 	}
+}
+
+func CheckForDatabase() bool {
+	_, err := os.Stat("database.db")
+	if err != nil {
+		_ = os.Remove("database.db")
+		_, _ = os.Create("database.db")
+		return CreateDatabase()
+	}
+	return true
 }

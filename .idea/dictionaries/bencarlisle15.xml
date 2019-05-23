@@ -3,7 +3,9 @@
     <words>
       <w>ciphertext</w>
       <w>encryptor</w>
+      <w>publickey</w>
       <w>sendable</w>
+      <w>sqlite</w>
     </words>
   </dictionary>
 </component>

@@ -40,10 +40,6 @@ func (worker *Worker) AddConnection(conn net.Conn) {
 	worker.Lock.Unlock()
 }
 
-func (worker Worker) Len() int {
-	return worker.Connections.Len()
-}
-
 func (worker Worker) HandleConnection(conn net.Conn) {
 	var response, err = ioutil.ReadAll(conn)
 	defer conn.Close()
@@ -52,4 +48,8 @@ func (worker Worker) HandleConnection(conn net.Conn) {
 	}
 	var toWrite = RequestHandler(response, worker.PrivateKey)
 	_, _ = conn.Write(toWrite)
+}
+
+func (worker Worker) Len() int {
+	return worker.Connections.Len()
 }

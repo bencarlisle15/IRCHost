@@ -45,6 +45,13 @@ func (executor *Executor) Start() {
 	}
 }
 
+func (executor *Executor) AddConnection(conn net.Conn) {
+	executor.Lock.Lock()
+	executor.Connections.Push(conn)
+	executor.Condition.Broadcast()
+	executor.Lock.Unlock()
+}
+
 func SmallestWorker(queue WorkerQueue) *Worker {
 	var smallestWorker = queue.Get(0)
 	for i := 1; i < queue.Len(); i++ {
@@ -53,11 +60,4 @@ func SmallestWorker(queue WorkerQueue) *Worker {
 		}
 	}
 	return smallestWorker
-}
-
-func (executor *Executor) AddConnection(conn net.Conn) {
-	executor.Lock.Lock()
-	executor.Connections.Push(conn)
-	executor.Condition.Broadcast()
-	executor.Lock.Unlock()
 }

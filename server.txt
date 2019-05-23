@@ -1,9 +1,9 @@
-register
+RegisterMessage
 [user] [aesKey] [macKey] [iv] [mac] (messageType, nonce, password, publicKey)
 
 <- [aesKey] [iv] <H(m)> (status, nonce, message)
 
-login
+LoggedInMessage
 [user] [aesKey] [iv] <H(m)> (messageType, nonce, password)
 
 <- [iv] <H(m)> (status, nonce, message, sessionId)
@@ -11,19 +11,19 @@ login
 sendMessage
 [user] [aesKey] [iv] <H(m)> (messageType, nonce, to, |message|, sessionId, isFile)
 
-<- [iv] <H(m)> (status, nonce, message)
+<- [aesKey] [iv] <H(m)> (status, nonce, message)
 
 userQuery
 [user] [aesKey] [iv] <H(m)> (messageType, nonce, to, sessionId)
 
-<- [iv] <H(m)> (status, nonce, message, publicKey)
+<- [aesKey] [iv] <H(m)> (status, nonce, message, publicKey)
 
 ping
 [user] [aesKey] [iv] <H(m)> (messageType, nonce, sessionId)
 
-<- [iv] <H(m)> (status, nonce, message)
+<- [aesKey] [iv] <H(m)> (status, nonce, message)
 
-<- [iv] <H(m)> (status, nonce, receiver, sender, message, isFile)
+<- [aesKey] [iv] <H(m)> (status, nonce, receiver, sender, message, isFile)
 
 
 Message Contains
@@ -36,6 +36,6 @@ InnerMessage Contains
 (messageType, nonce, to, password, sessionId, message, isFile, publicKey)
 
 Response Contains
-[iv] <Signature> (data)
+[aesKey] [iv] <Signature> (data)
 	Sendable -> (status, nonce, receiver, sender, message, isFile)
 	Non-sendable -> (status, nonce, message, sessionId, publicKey
