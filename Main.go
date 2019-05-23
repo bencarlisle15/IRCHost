@@ -13,6 +13,10 @@ func main() {
 		fmt.Println("Database could not be created")
 		return
 	}
+	if !PrivateKeyFound() {
+		fmt.Println("No private key found")
+		return
+	}
 	if err != nil {
 		fmt.Println(err)
 		time.Sleep(100)
@@ -42,4 +46,9 @@ func CheckForDatabase() bool {
 		return CreateDatabase()
 	}
 	return true
+}
+
+func PrivateKeyFound() bool {
+	_, err := os.Stat("PrivateKey.pem")
+	return err == nil
 }
