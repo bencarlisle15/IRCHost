@@ -4,21 +4,7 @@
     <bookmark url="file://$PROJECT_DIR$/.gitignore" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="2e89ac0f-ae8d-4f42-bd50-112d82a754c9" name="Default Changelist" comment="">
-      <change afterPath="$PROJECT_DIR$/.idea/dataSources.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/Utils.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/dictionaries/bencarlisle15.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/dictionaries/bencarlisle15.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/inspectionProfiles/Project_Default.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/Project_Default.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Encryptor.go" beforeDir="false" afterPath="$PROJECT_DIR$/Encryptor.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Executor.go" beforeDir="false" afterPath="$PROJECT_DIR$/Executor.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Inquirer.go" beforeDir="false" afterPath="$PROJECT_DIR$/Inquirer.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Main.go" beforeDir="false" afterPath="$PROJECT_DIR$/Main.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/RequestHandler.go" beforeDir="false" afterPath="$PROJECT_DIR$/RequestHandler.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Validator.go" beforeDir="false" afterPath="$PROJECT_DIR$/Validator.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Worker.go" beforeDir="false" afterPath="$PROJECT_DIR$/Worker.go" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/server.txt" beforeDir="false" afterPath="$PROJECT_DIR$/server.txt" afterDir="false" />
-    </list>
+    <list default="true" id="2e89ac0f-ae8d-4f42-bd50-112d82a754c9" name="Default Changelist" comment="" />
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
